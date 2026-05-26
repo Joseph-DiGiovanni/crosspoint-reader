@@ -572,13 +572,14 @@ void loop() {
     screenshotButtonsReleased = true;
     screenshotComboActive = false;
   }
-
-  const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
-  if (millis() - lastActivityTime >= sleepTimeoutMs) {
-    LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
-    enterDeepSleep(true);
-    // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
-    return;
+  if (SETTINGS.sleepTimeout != CrossPointSettings::SLEEP_NEVER) {
+    const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+    if (millis() - lastActivityTime >= sleepTimeoutMs) {
+      LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
+      enterDeepSleep(true);
+      // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
+      return;
+    }
   }
 
   if (millis() >= allowSleepAt && gpio.isPressed(HalGPIO::BTN_POWER) &&

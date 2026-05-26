@@ -6,6 +6,7 @@
 #include <Serialization.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include "I18nKeys.h"
@@ -317,6 +318,14 @@ unsigned long CrossPointSettings::getSleepTimeoutMs() const {
       return 15UL * 60 * 1000;
     case SLEEP_30_MIN:
       return 30UL * 60 * 1000;
+    case SLEEP_1_HR:
+      return 1UL * 60 * 60 * 1000;
+    case SLEEP_2_HR:
+      return 2UL * 60 * 60 * 1000;
+    case SLEEP_4_HR:
+      return 4UL * 60 * 60 * 1000;
+    case SLEEP_NEVER:
+      return std::numeric_limits<unsigned long>::max();
     default:
       return 10UL * 60 * 1000;
   }
