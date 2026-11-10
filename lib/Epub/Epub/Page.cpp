@@ -8,6 +8,10 @@
 
 namespace {
 
+// Serialized PageLink line-break bits.
+constexpr uint8_t LINK_CONTINUES_PREVIOUS = 0x01;
+constexpr uint8_t LINK_CONTINUES_NEXT = 0x02;
+
 template <typename Predicate>
 void renderFilteredPageElements(const std::vector<std::unique_ptr<PageElement>>& elements, GfxRenderer& renderer,
                                 const int fontId, const int xOffset, const int yOffset, Predicate&& predicate) {
@@ -350,6 +354,9 @@ bool Page::serialize(HalFile& file) const {
     serialization::writePod(file, link.y);
     serialization::writePod(file, link.width);
     serialization::writePod(file, link.height);
+    const uint8_t lineBreaks =
+        (link.continuesPrevious ? LINK_CONTINUES_PREVIOUS : 0) | (link.continuesNext ? LINK_CONTINUES_NEXT : 0);
+    serialization::writePod(file, lineBreaks);
   }
 
   return true;
@@ -452,6 +459,10 @@ std::unique_ptr<Page> Page::deserialize(HalFile& file) {
     serialization::readPod(file, link.y);
     serialization::readPod(file, link.width);
     serialization::readPod(file, link.height);
+    uint8_t lineBreaks = 0;
+    serialization::readPod(file, lineBreaks);
+    link.continuesPrevious = (lineBreaks & LINK_CONTINUES_PREVIOUS) != 0;
+    link.continuesNext = (lineBreaks & LINK_CONTINUES_NEXT) != 0;
     if (link.href[0] == '\0' || link.width <= 0 || link.height <= 0) {
       LOG_ERR("PGE", "Invalid link geometry %u", i);
       return nullptr;

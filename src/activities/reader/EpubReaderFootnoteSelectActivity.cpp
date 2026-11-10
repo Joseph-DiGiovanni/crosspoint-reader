@@ -23,17 +23,14 @@ void EpubReaderFootnoteSelectActivity::onEnter() {
 
 void EpubReaderFootnoteSelectActivity::buildFootnoteLinks() {
   footnoteLinks.clear();
-  footnoteLinks.reserve(page->footnotes.size());
+  const size_t count = std::min<size_t>(page->footnotes.size(), Page::MAX_FOOTNOTES_PER_PAGE);
+  footnoteLinks.reserve(count);
 
-  // Match each footnote entry to its PageLink on this page. Footnote links
-  // and footnote entries share the same href, so we can cross-reference them.
-  for (const auto& footnote : page->footnotes) {
-    const auto link = std::find_if(page->links.begin(), page->links.end(), [&footnote](const PageLink& candidate) {
-      return strcmp(candidate.href, footnote.href) == 0;
-    });
-    if (link != page->links.end()) {
-      footnoteLinks.push_back({&*link, &footnote});
-    }
+  // A repeated href (a reused citation) has one entry per occurrence; each gets its own links.
+  uint32_t masks[Page::MAX_FOOTNOTES_PER_PAGE];
+  matchFootnoteLinks(page->footnotes.data(), count, page->links.data(), page->links.size(), masks);
+  for (size_t i = 0; i < count; i++) {
+    if (masks[i] != 0) footnoteLinks.push_back({masks[i], &page->footnotes[i]});
   }
 }
 
@@ -88,47 +85,63 @@ void EpubReaderFootnoteSelectActivity::loop() {
   }
 }
 
-bool EpubReaderFootnoteSelectActivity::drawHighlightWithSnapshot() {
+bool EpubReaderFootnoteSelectActivity::drawHighlightWithSnapshot(const int index) {
   if (footnoteLinks.empty()) return false;
-  const PageLink* link = footnoteLinks[selected].link;
+  const uint32_t lines = footnoteLinks[index].links;
 
-  const int x = link->x + marginLeft;
-  const int y = link->y + marginTop;
-  int hx = x - 2;
-  int hy = y - 2;
-  int hw = link->width + 4;
-  int hh = link->height + 4;
-
-  if (hx < 0) {
-    hw += hx;
-    hx = 0;
+  // Save every line's box before drawing any: the boxes of adjacent lines can overlap.
+  // More boxes or pixels than the buffer holds leave the next move a full repaint.
+  bool saved = snapshot != nullptr;
+  size_t used = 0;
+  snapshotBoxCount = 0;
+  for (uint32_t bits = lines; bits != 0 && saved; bits &= bits - 1) {
+    const PageLink& link = page->links[__builtin_ctz(bits)];
+    int hx = link.x + marginLeft - 2;
+    int hy = link.y + marginTop - 2;
+    int hw = link.width + 4;
+    int hh = link.height + 4;
+    if (hx < 0) {
+      hw += hx;
+      hx = 0;
+    }
+    if (hy < 0) {
+      hh += hy;
+      hy = 0;
+    }
+    size_t bytes = 0;
+    if (snapshotBoxCount < MAX_SNAPSHOT_BOXES && hw > 0 && hh > 0) {
+      bytes = renderer.readFramebufferRegion(hx, hy, hw, hh, snapshot.get() + used, SNAPSHOT_CAPACITY - used);
+    }
+    saved = bytes > 0;
+    if (!saved) break;
+    snapshotBoxes[snapshotBoxCount++] = {static_cast<int16_t>(hx), static_cast<int16_t>(hy), static_cast<int16_t>(hw),
+                                         static_cast<int16_t>(hh), static_cast<uint16_t>(used)};
+    used += bytes;
   }
-  if (hy < 0) {
-    hh += hy;
-    hy = 0;
-  }
+  snapshotIdx = saved ? index : -1;
 
-  bool saved = false;
-  if (snapshot && hw > 0 && hh > 0) {
-    saved = renderer.readFramebufferRegion(hx, hy, hw, hh, snapshot.get(), SNAPSHOT_CAPACITY) > 0;
+  for (uint32_t bits = lines; bits != 0; bits &= bits - 1) {
+    const PageLink& link = page->links[__builtin_ctz(bits)];
+    const int x = link.x + marginLeft;
+    const int y = link.y + marginTop;
+    renderer.fillRectDither(x, y, link.width, link.height, Color::LightGray, GfxRenderer::DitherMode::PreserveInk);
+    renderer.drawRect(x - 2, y - 2, link.width + 4, link.height + 4, true);
   }
-  snapshotX = static_cast<int16_t>(hx);
-  snapshotY = static_cast<int16_t>(hy);
-  snapshotW = static_cast<int16_t>(hw);
-  snapshotH = static_cast<int16_t>(hh);
-  snapshotIdx = saved ? selected : -1;
-
-  renderer.fillRectDither(x, y, link->width, link->height, Color::LightGray, GfxRenderer::DitherMode::PreserveInk);
-  renderer.drawRect(x - 2, y - 2, link->width + 4, link->height + 4, true);
   return saved;
 }
 
 void EpubReaderFootnoteSelectActivity::render(RenderLock&&) {
+  // loop() moves the selection without the render lock: read it once per render.
+  const int target = selected;
+
   // Differential fast path: only the highlight moved and the framebuffer still
   // holds a clean page.
-  if (snapshotIdx >= 0 && !footnoteLinks.empty() && selected != snapshotIdx) {
-    renderer.writeFramebufferRegion(snapshotX, snapshotY, snapshotW, snapshotH, snapshot.get());
-    if (drawHighlightWithSnapshot()) {
+  if (snapshotIdx >= 0 && !footnoteLinks.empty() && target != snapshotIdx) {
+    for (uint8_t i = 0; i < snapshotBoxCount; i++) {
+      const SnapshotBox& box = snapshotBoxes[i];
+      renderer.writeFramebufferRegion(box.x, box.y, box.w, box.h, snapshot.get() + box.offset);
+    }
+    if (drawHighlightWithSnapshot(target)) {
       drawHints();
       renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       return;
@@ -144,7 +157,7 @@ void EpubReaderFootnoteSelectActivity::render(RenderLock&&) {
   }
 
   if (!footnoteLinks.empty()) {
-    drawHighlightWithSnapshot();
+    drawHighlightWithSnapshot(target);
   }
 
   drawHints();

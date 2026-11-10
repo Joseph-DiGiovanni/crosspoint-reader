@@ -124,6 +124,36 @@ class ChapterHtmlSlimParserTest : public ::testing::TestWithParam<const char*> {
     std::filesystem::remove(cachePath);
     return selected;
   }
+
+  // Lays out a body fragment and returns its pages as read back from the section cache.
+  std::vector<std::unique_ptr<Page>> parseToCachedPages(const std::string& body) {
+    const std::string html = "<html><body>" + body + "</body></html>";
+    const auto tempDir = std::filesystem::temp_directory_path();
+    const std::string testId = std::to_string(std::hash<std::string>{}(html));
+    filepath = (tempDir / ("crosspoint-links-" + testId + ".xhtml")).string();
+    {
+      HalFile file;
+      EXPECT_TRUE(file.open(filepath.c_str(), "wb"));
+      EXPECT_EQ(file.write(html.data(), html.size()), html.size());
+    }
+    const auto cachePath = (tempDir / ("crosspoint-links-" + testId + ".bin")).string();
+    std::vector<std::unique_ptr<Page>> pages;
+    parser.completePageFn = [&](std::unique_ptr<Page> page, auto, auto, auto) {
+      {
+        HalFile file;
+        ASSERT_TRUE(file.open(cachePath.c_str(), "wb"));
+        ASSERT_TRUE(page->serialize(file));
+      }
+      HalFile file;
+      ASSERT_TRUE(file.open(cachePath.c_str(), "rb"));
+      pages.push_back(Page::deserialize(file));
+      ASSERT_NE(pages.back(), nullptr);
+    };
+    EXPECT_TRUE(parser.parseAndBuildPages());
+    std::filesystem::remove(filepath);
+    std::filesystem::remove(cachePath);
+    return pages;
+  }
 };
 
 TEST(ImageDimsProbe, ReadsBothGifSignaturesInFragmentedStreams) {
@@ -456,6 +486,35 @@ TEST_P(ChapterHtmlSlimParserTest, KeepsCssVerticalAlignAndInternalLinkMetadata) 
 
 INSTANTIATE_TEST_SUITE_P(CssVerticalAlign, ChapterHtmlSlimParserTest,
                          ::testing::Values("vertical-align: super", "vertical-align: sub"));
+
+TEST_F(ChapterHtmlSlimParserTest, WrappedAndRepeatedLinksKeepTheirOwnLines) {
+  std::string body = "<p><a href=\"#long\">";
+  for (int i = 0; i < 12; i++) body += "linkword ";  // about two lines at 480 px
+  body += "</a> see <a href=\"#note\">5</a>";
+  for (int i = 0; i < 24; i++) body += " filler";
+  body += " <a href=\"#note\">5</a></p>";
+  const auto pages = parseToCachedPages(body);
+  ASSERT_EQ(pages.size(), 1u);
+  const Page& page = *pages[0];
+  ASSERT_EQ(page.footnotes.size(), 3u);
+
+  uint32_t masks[3];
+  matchFootnoteLinks(page.footnotes.data(), 3, page.links.data(), page.links.size(), masks);
+  ASSERT_EQ(__builtin_popcount(masks[0]), 2);
+  const PageLink& first = page.links[__builtin_ctz(masks[0])];
+  const PageLink& second = page.links[31 - __builtin_clz(masks[0])];
+  EXPECT_TRUE(first.continuesNext);
+  EXPECT_FALSE(first.continuesPrevious);
+  EXPECT_TRUE(second.continuesPrevious);
+  EXPECT_FALSE(second.continuesNext);
+  EXPECT_GT(second.y, first.y);
+
+  // The two citations are separate lines' links, each with its own entry.
+  EXPECT_EQ(__builtin_popcount(masks[1]), 1);
+  EXPECT_EQ(__builtin_popcount(masks[2]), 1);
+  EXPECT_NE(masks[1], masks[2]);
+  EXPECT_EQ(masks[0] & (masks[1] | masks[2]), 0u);
+}
 
 TEST_F(ChapterHtmlSlimParserTest, ParagraphWithHiddenAttributeShouldBeSkipped) {
   const XML_Char* attributes[] = {"hidden", "hidden", nullptr};

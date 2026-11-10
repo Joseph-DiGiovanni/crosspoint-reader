@@ -30,7 +30,7 @@ class EpubReaderFootnoteSelectActivity final : public Activity {
  private:
   void buildFootnoteLinks();
   void performJump();
-  bool drawHighlightWithSnapshot();
+  bool drawHighlightWithSnapshot(int index);
   void drawHints() const;
 
   std::unique_ptr<Page> page;
@@ -38,19 +38,25 @@ class EpubReaderFootnoteSelectActivity final : public Activity {
   const int marginTop;
 
   struct FootnoteLink {
-    const PageLink* link;
+    uint32_t links;  // bit i: page->links[i] is one line of this link
     const FootnoteEntry* footnote;
   };
   std::vector<FootnoteLink> footnoteLinks;
   int selected = 0;
 
-  // Differential highlight repaint: pixels under the current highlight box.
+  // Differential highlight repaint: pixels under the current highlight's boxes, one per line.
+  struct SnapshotBox {
+    int16_t x;
+    int16_t y;
+    int16_t w;
+    int16_t h;
+    uint16_t offset;  // into snapshot
+  };
   static constexpr size_t SNAPSHOT_CAPACITY = 4096;
+  static constexpr uint8_t MAX_SNAPSHOT_BOXES = 4;
   std::unique_ptr<uint8_t[]> snapshot;
-  int16_t snapshotX = 0;
-  int16_t snapshotY = 0;
-  int16_t snapshotW = 0;
-  int16_t snapshotH = 0;
+  SnapshotBox snapshotBoxes[MAX_SNAPSHOT_BOXES] = {};
+  uint8_t snapshotBoxCount = 0;
   int snapshotIdx = -1;
 
   unsigned long lastHorizontalMoveTime = 0;

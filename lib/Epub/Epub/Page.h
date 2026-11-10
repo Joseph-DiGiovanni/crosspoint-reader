@@ -129,6 +129,7 @@ class Page {
   static constexpr uint16_t MAX_FOOTNOTES_PER_PAGE = 16;
   std::vector<PageLink> links;
   static constexpr uint16_t MAX_LINKS_PER_PAGE = 32;
+  static_assert(MAX_LINKS_PER_PAGE <= MAX_MATCHED_LINKS, "footnote matching keeps link indices in a 32-bit mask");
 
   // Zero-based visible-codepoint offset where this page starts. Not part of the serialized page
   // body (it lives in the section's visible-offset LUT); Section::loadPage* fills it in from the
@@ -146,7 +147,8 @@ class Page {
     footnotes.push_back(entry);
   }
 
-  bool addLink(const char* href, int16_t x, int16_t y, int16_t width, int16_t height) {
+  bool addLink(const char* href, int16_t x, int16_t y, int16_t width, int16_t height, bool continuesPrevious = false,
+               bool continuesNext = false) {
     if (!href || width <= 0 || height <= 0 || links.size() >= MAX_LINKS_PER_PAGE) {
       return false;
     }
@@ -161,6 +163,8 @@ class Page {
     link.y = y;
     link.width = width;
     link.height = height;
+    link.continuesPrevious = continuesPrevious;
+    link.continuesNext = continuesNext;
     return true;
   }
 

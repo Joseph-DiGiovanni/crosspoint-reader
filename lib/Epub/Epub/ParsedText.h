@@ -46,6 +46,8 @@ class ParsedText {
   // Zero means plain text; non-zero indexes linkTargets. Kept at one byte per
   // token and discarded after layout, never added to the page-cache TextBlock.
   std::vector<uint8_t> wordLinkIds;
+  // Link id the next extracted line continues (its first word's link), or 0.
+  uint8_t lastLineEndLinkId = 0;
   // Words sized by an inline font-size span: a slot per word into sizeSlotScales (absolute
   // multiples of the reader's body size). Slot 0 follows the block's own size; the parser
   // resolves each slot's font before layout.

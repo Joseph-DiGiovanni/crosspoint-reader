@@ -54,6 +54,9 @@ class TextBlock final : public Block {
     int16_t x;
     int16_t width;
     int16_t topLift;
+    // A wrapped link has one span per line: these mark the line breaks inside it.
+    bool continuesPrevious = false;
+    bool continuesNext = false;
   };
 
  private:

@@ -90,6 +90,13 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 74
+
+Version 74 adds a u8 after each page link's height: bit 0 is set when the link
+continues from the previous line and bit 1 when it goes on at the start of the
+next line. A link that wraps has one page link per line, and these bits tell its
+lines apart from another link to the same target. Older sections are rebuilt.
+
 ### Version 73
 
 Version 73 keeps the binary layout and rebuilds completed and partial sections.

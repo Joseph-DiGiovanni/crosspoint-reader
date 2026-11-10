@@ -3145,7 +3145,8 @@ void ChapterHtmlSlimParser::breakPageCarryingLines(const size_t carry, const siz
     noteContent(0, currentPageNextY);
   }
   for (const PageLink& link : carriedLinks) {
-    currentPage->addLink(link.href, link.x, static_cast<int16_t>(link.y - carriedTop), link.width, link.height);
+    currentPage->addLink(link.href, link.x, static_cast<int16_t>(link.y - carriedTop), link.width, link.height,
+                         link.continuesPrevious, link.continuesNext);
   }
   paragraphLinesOnPage = static_cast<uint8_t>(paragraphLines);
 }
@@ -3189,7 +3190,8 @@ void ChapterHtmlSlimParser::addLineToPage(std::unique_ptr<TextBlock> line, const
   for (const auto& link : line->takeLinkSpans()) {
     if (!currentPage->addLink(link.href, static_cast<int16_t>(xOffset + link.x),
                               static_cast<int16_t>(currentPageNextY + rubyShift - link.topLift), link.width,
-                              static_cast<int16_t>(baseLineHeight + link.topLift))) {
+                              static_cast<int16_t>(baseLineHeight + link.topLift), link.continuesPrevious,
+                              link.continuesNext)) {
       LOG_DBG("EHP", "Dropped page link: %.48s", link.href);
     }
   }

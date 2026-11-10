@@ -1826,6 +1826,23 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     }
   }
 
+  // Flag the line breaks inside a wrapped link. The next line's first word is found the way
+  // that line skips a carried no-break space, so the two flags always agree.
+  if (lineWordCount > 0) {
+    const uint8_t firstLinkId = wordLinkIds[lastBreakAt];
+    const uint8_t lastLinkId = wordLinkIds[lineBreak - 1];
+    size_t next = lineBreak;
+    while (next + 1 < continuesVec.size() && continuesVec[next] && wordAt(next) == " ") ++next;
+    const bool linkContinues = lastLinkId != 0 && next < wordLinkIds.size() && wordLinkIds[next] == lastLinkId;
+    for (size_t s = 0; s < lineLinkIdsSeen.size(); s++) {
+      if (firstLinkId != 0 && firstLinkId == lastLineEndLinkId && lineLinkIdsSeen[s] == firstLinkId) {
+        lineLinks[s].continuesPrevious = true;
+      }
+      if (linkContinues && lineLinkIdsSeen[s] == lastLinkId) lineLinks[s].continuesNext = true;
+    }
+    lastLineEndLinkId = linkContinues ? lastLinkId : 0;
+  }
+
   // Lines mixing sizes or using small caps carry per-word fonts; slots resolving to the block
   // font collapse to 0.
   const auto attachWordFonts = [&](TextBlock& block) {
